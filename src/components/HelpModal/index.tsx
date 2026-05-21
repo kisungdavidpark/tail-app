@@ -30,16 +30,17 @@ const CONTENT = {
           { label: "▶ 재생 / ⏸ 일시정지", desc: "툴바 우측 버튼 또는 F 키로 실시간 follow 모드를 토글합니다." },
           { label: "탭 인디케이터", desc: "● 초록: 실시간 · ● 노랑: 실시간 + 미확인 변경 · ⏸ 회색: 정지 · ⏸ 주황: 정지 + 미확인 변경" },
           { label: "최신 줄로 이동", desc: "재생 중 위로 스크롤하면 '↓ 최신 줄로' 버튼이 나타납니다." },
-          { label: "바운스 애니메이션", desc: "일시정지 후 재개 시 새 줄이 한 번에 표시되면서 바운스 효과가 나타납니다." },
+          { label: "대용량 파일", desc: `최근 ${(200_000).toLocaleString()}줄만 표시합니다. 상단에 안내 배너가 나타나며, 이전 내용은 검색으로 확인하세요.` },
         ],
       },
       {
         title: "검색",
         items: [
           { label: "검색 열기", desc: "Ctrl+F (macOS: Cmd+F) 또는 Esc 키로 닫습니다." },
-          { label: "정규식", desc: "검색창의 '정규식' 버튼을 켜면 정규식으로 검색합니다." },
-          { label: "대소문자 구분", desc: "'대소문자 구분' 버튼으로 토글합니다." },
-          { label: "결과 탐색", desc: "Enter: 다음 · Shift+Enter: 이전 · 결과는 현재 필터 적용 범위에서만 검색합니다." },
+          { label: "네비게이션 모드", desc: "검색 중에도 모든 줄이 표시됩니다. 매치된 줄로만 이동하며 하이라이트됩니다." },
+          { label: "결과 탐색", desc: "Enter: 다음 매치로 스크롤 · Shift+Enter: 이전 매치로 스크롤" },
+          { label: "정규식 / 대소문자", desc: "검색창의 '정규식', '대소문자 구분' 버튼으로 토글합니다." },
+          { label: "줄 이동", desc: "검색창에 :N 입력 후 Enter로 N번 줄로 바로 이동합니다. (예: :1234)" },
         ],
       },
       {
@@ -54,9 +55,31 @@ const CONTENT = {
       {
         title: "하이라이트",
         items: [
-          { label: "규칙 추가", desc: "툴바의 '🎨 규칙' 버튼을 클릭해 패널을 엽니다. 패턴과 색상을 지정하면 해당 줄이 강조됩니다." },
-          { label: "정규식 지원", desc: "패턴 입력란 옆 정규식 버튼(.**)으로 정규식 패턴을 사용할 수 있습니다." },
+          { label: "규칙 추가", desc: "툴바의 '규칙' 버튼을 클릭해 패널을 엽니다. 패턴과 색상을 지정하면 해당 줄이 강조됩니다." },
+          { label: "정규식 지원", desc: "패턴 입력란 옆 정규식 버튼(.*)으로 정규식 패턴을 사용할 수 있습니다." },
           { label: "규칙 삭제", desc: "각 규칙 오른쪽의 ✕ 버튼으로 삭제합니다." },
+        ],
+      },
+      {
+        title: "줄바꿈",
+        items: [
+          { label: "토글", desc: "툴바의 '줄바꿈' 버튼으로 켜고 끕니다. 켜면 긴 줄이 자동으로 줄 바꿈되어 가로 스크롤 없이 전체 내용을 볼 수 있습니다." },
+          { label: "주의", desc: "줄바꿈 모드에서는 가상 스크롤이 동적 높이로 작동하여 렌더링이 다소 느릴 수 있습니다." },
+        ],
+      },
+      {
+        title: "사이드바",
+        items: [
+          { label: "너비 조정", desc: "사이드바 오른쪽 가장자리를 드래그해 너비를 조정합니다." },
+          { label: "숨기기 / 펼치기", desc: "사이드바 상단의 ‹ 버튼으로 숨깁니다. 숨기면 아이콘 띠(44px)로 표시됩니다. 아이콘 클릭 또는 › 버튼으로 다시 펼칩니다." },
+        ],
+      },
+      {
+        title: "인코딩",
+        items: [
+          { label: "변경", desc: "툴바의 인코딩 버튼(예: UTF-8 ▾)을 클릭해 변경합니다. 변경 즉시 파일을 다시 읽습니다." },
+          { label: "지원 인코딩", desc: "UTF-8 · EUC-KR · CP949 · UTF-16 · UTF-16BE" },
+          { label: "우클릭 재해석", desc: "텍스트를 선택한 후 우클릭 → '다음 인코딩으로 재해석' → 인코딩 선택 시 원본과 변환 결과를 팝업으로 비교할 수 있습니다." },
         ],
       },
       {
@@ -65,13 +88,6 @@ const CONTENT = {
           { label: "현재 표시 줄만 저장", desc: "필터·검색 결과에 표시된 줄만 내보냅니다. 전체 파일이 아닌 현재 뷰 기준입니다." },
           { label: "텍스트 (.txt)", desc: "줄 내용만 저장합니다." },
           { label: "CSV (.csv)", desc: "index, level, timestamp, content 컬럼으로 저장합니다." },
-        ],
-      },
-      {
-        title: "인코딩",
-        items: [
-          { label: "변경", desc: "툴바의 인코딩 버튼(예: UTF-8 ▾)을 클릭해 변경합니다. 변경 즉시 파일을 다시 읽습니다." },
-          { label: "지원 인코딩", desc: "UTF-8 · EUC-KR · CP949 · UTF-16 · UTF-16BE" },
         ],
       },
       {
@@ -95,15 +111,15 @@ const CONTENT = {
     shortcuts: [
       { label: "F", desc: "일시정지 / 재생 토글" },
       { label: "Ctrl+F  /  Cmd+F", desc: "검색 열기" },
-      { label: "Enter", desc: "다음 검색 결과" },
-      { label: "Shift+Enter", desc: "이전 검색 결과" },
+      { label: "Enter", desc: "다음 검색 결과로 스크롤" },
+      { label: "Shift+Enter", desc: "이전 검색 결과로 스크롤" },
       { label: "Esc", desc: "검색 닫기" },
       { label: ":N  (검색창에서)", desc: "N번 줄로 바로 이동 (예: :1234 입력 후 Enter)" },
     ],
     about: {
-      name: "Tail — 리얼타임 로그 뷰어",
+      name: "Logr — 리얼타임 로그 뷰어",
       desc: "Unix tail -f를 대체하는 실시간 로그 뷰어",
-      features: "멀티탭 · 검색 · 필터 · 하이라이트 · SSH · 인코딩 지원",
+      features: "멀티탭 · 검색 · 필터 · 하이라이트 · SSH · 인코딩 · 줄바꿈 지원",
       version: "버전",
       license: "라이선스",
       github: "GitHub",
@@ -128,16 +144,17 @@ const CONTENT = {
           { label: "▶ Resume / ⏸ Pause", desc: "Toggle follow mode using the toolbar button or the F key." },
           { label: "Tab indicators", desc: "● Green: live · ● Amber: live + unread · ⏸ Gray: paused · ⏸ Orange: paused + unread" },
           { label: "Jump to latest", desc: "While following, scrolling up reveals a '↓ Jump to latest' button." },
-          { label: "Bounce animation", desc: "When resuming after a pause, accumulated lines appear with a bounce effect." },
+          { label: "Large files", desc: `Only the last ${(200_000).toLocaleString()} lines are shown. A notice banner appears at the top — use search to find earlier content.` },
         ],
       },
       {
         title: "Search",
         items: [
           { label: "Open search", desc: "Ctrl+F (macOS: Cmd+F). Press Esc to close." },
-          { label: "Regex", desc: "Enable the 'Regex' toggle to search using regular expressions." },
-          { label: "Case sensitive", desc: "Toggle the 'Case sensitive' button." },
-          { label: "Navigate results", desc: "Enter: next · Shift+Enter: previous. Searches within the currently filtered view." },
+          { label: "Navigation mode", desc: "All lines remain visible while searching. Matches are highlighted and you navigate between them." },
+          { label: "Navigate results", desc: "Enter: scroll to next match · Shift+Enter: scroll to previous match" },
+          { label: "Regex / Case", desc: "Toggle 'Regex' and 'Case sensitive' buttons in the search bar." },
+          { label: "Jump to line", desc: "Type :N in the search bar then Enter to jump to line N (e.g., :1234)." },
         ],
       },
       {
@@ -152,9 +169,31 @@ const CONTENT = {
       {
         title: "Highlights",
         items: [
-          { label: "Add rule", desc: "Click the '🎨 Rules' button in the toolbar. Set a pattern and color to highlight matching lines." },
+          { label: "Add rule", desc: "Click the 'Rules' button in the toolbar. Set a pattern and color to highlight matching lines." },
           { label: "Regex support", desc: "Use the regex button next to the pattern input for regex patterns." },
           { label: "Delete rule", desc: "Click the ✕ button on any rule to remove it." },
+        ],
+      },
+      {
+        title: "Word Wrap",
+        items: [
+          { label: "Toggle", desc: "Click the 'Wrap' button in the toolbar. When on, long lines wrap automatically — no horizontal scrolling needed." },
+          { label: "Note", desc: "Word wrap uses dynamic row heights, which may be slightly slower to render." },
+        ],
+      },
+      {
+        title: "Sidebar",
+        items: [
+          { label: "Resize", desc: "Drag the right edge of the sidebar to resize it." },
+          { label: "Collapse / Expand", desc: "Click the ‹ button to collapse the sidebar to an icon strip (44px). Click the icons or › to expand again." },
+        ],
+      },
+      {
+        title: "Encoding",
+        items: [
+          { label: "Change encoding", desc: "Click the encoding button (e.g., UTF-8 ▾) in the toolbar. The file reloads immediately." },
+          { label: "Supported encodings", desc: "UTF-8 · EUC-KR · CP949 · UTF-16 · UTF-16BE" },
+          { label: "Right-click re-interpret", desc: "Select text, right-click → 'Re-interpret as encoding' → choose an encoding to compare original vs. re-decoded in a popup." },
         ],
       },
       {
@@ -163,13 +202,6 @@ const CONTENT = {
           { label: "Exports visible lines only", desc: "Only lines shown after filter/search are exported — not the entire file." },
           { label: "Text (.txt)", desc: "Saves line content only." },
           { label: "CSV (.csv)", desc: "Saves columns: index, level, timestamp, content." },
-        ],
-      },
-      {
-        title: "Encoding",
-        items: [
-          { label: "Change encoding", desc: "Click the encoding button (e.g., UTF-8 ▾) in the toolbar. The file reloads immediately." },
-          { label: "Supported encodings", desc: "UTF-8 · EUC-KR · CP949 · UTF-16 · UTF-16BE" },
         ],
       },
       {
@@ -193,15 +225,15 @@ const CONTENT = {
     shortcuts: [
       { label: "F", desc: "Toggle pause / resume" },
       { label: "Ctrl+F  /  Cmd+F", desc: "Open search" },
-      { label: "Enter", desc: "Next search result" },
-      { label: "Shift+Enter", desc: "Previous search result" },
+      { label: "Enter", desc: "Scroll to next search result" },
+      { label: "Shift+Enter", desc: "Scroll to previous search result" },
       { label: "Esc", desc: "Close search" },
       { label: ":N  (in search bar)", desc: "Jump to line N (e.g., type :1234 then Enter)" },
     ],
     about: {
-      name: "Tail — Realtime Log Viewer",
+      name: "Logr — Realtime Log Viewer",
       desc: "A GUI replacement for Unix tail -f",
-      features: "Multi-tab · Search · Filter · Highlight · SSH · Encoding",
+      features: "Multi-tab · Search · Filter · Highlight · SSH · Encoding · Word Wrap",
       version: "Version",
       license: "License",
       github: "GitHub",
