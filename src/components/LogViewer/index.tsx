@@ -83,12 +83,29 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
   const [filter, setFilter] = useState<FilterState>(createDefaultFilter());
 
   const parentRef = useRef<HTMLDivElement>(null);
+  const innerContentRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
   const filePosRef = useRef(0);
   const activeTabIdRef = useRef(activeTab?.id);
   activeTabIdRef.current = activeTab?.id;
   const updateTabRef = useRef(updateTab);
   updateTabRef.current = updateTab;
+  const lastLineCountRef = useRef(0);
+  const justResumedRef = useRef(false);
+
+  const triggerBounceAnimation = useCallback(() => {
+    const el = innerContentRef.current;
+    if (!el) return;
+    el.animate(
+      [
+        { transform: "translateY(0px)" },
+        { transform: "translateY(-14px)" },
+        { transform: "translateY(4px)" },
+        { transform: "translateY(0px)" },
+      ],
+      { duration: 520, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
+    );
+  }, []);
 
   // 필터 적용 → 검색 적용 순서로 표시할 줄 결정
   const filteredLines = useMemo(() => {
@@ -184,6 +201,8 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     setSearchMatches(null);
     atBottomRef.current = true;
     filePosRef.current = 0;
+    lastLineCountRef.current = 0;
+    justResumedRef.current = false;
 
     const loadPromise = isSshTab
       ? invoke<LogLine[]>("ssh_read_tail", {
@@ -257,12 +276,25 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     }
   }, [isLoading]);
 
+  // isFollowing이 true로 바뀌면 다음 배치에서 바운스 트리거 준비
+  useEffect(() => {
+    if (activeTab?.isFollowing) {
+      justResumedRef.current = true;
+    }
+  }, [activeTab?.isFollowing]);
+
   // 새 줄 도착 시: 하단이면 자동 스크롤, 아니면 hasUnread 표시
   useEffect(() => {
     if (lines.length === 0) return;
+    const batchSize = lines.length - lastLineCountRef.current;
+    lastLineCountRef.current = lines.length;
     if (atBottomRef.current) {
       if (activeTab?.isFollowing && !searchMatches) {
         virtualizer.scrollToIndex(lines.length - 1, { align: "end" });
+        if (justResumedRef.current && batchSize >= 1) {
+          justResumedRef.current = false;
+          requestAnimationFrame(() => requestAnimationFrame(() => triggerBounceAnimation()));
+        }
       }
     } else if (activeTabIdRef.current) {
       updateTabRef.current(activeTabIdRef.current, { hasUnread: true });
@@ -433,7 +465,7 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
             {searchMatches !== null ? t("viewer.noSearchResults") : t("viewer.fileEmpty")}
           </div>
         ) : (
-          <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
+          <div ref={innerContentRef} style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
             {virtualizer.getVirtualItems().map((vRow) => {
               const line = displayLines[vRow.index];
               const match = searchMatches?.[vRow.index];
