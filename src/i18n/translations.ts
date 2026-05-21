@@ -15,6 +15,8 @@ export const translations = {
     "sidebar.edit": "편집",
     "sidebar.delete": "삭제",
     "sidebar.openFile": "파일 열기",
+    "sidebar.collapse": "사이드바 접기",
+    "sidebar.expand": "사이드바 펼치기",
     // TabBar
     "tabBar.noFiles": "열린 파일 없음",
     "tabBar.closeTab": "탭 닫기",
@@ -23,8 +25,8 @@ export const translations = {
     "tabBar.paused": "일시정지",
     "tabBar.pausedUnread": "일시정지 · 미확인 변경 있음",
     // LogViewer
-    "viewer.openFileHint": "파일을 열어 로그를 확인하세요",
-    "viewer.openFileSub": "사이드바의 \"파일 열기\" 버튼을 사용하세요",
+    "viewer.openFileHint": "Logr",
+    "viewer.openFileSub": "개발자의, 개발자에 의한, 개발자를 위한 로그 뷰어",
     "viewer.loading": "로딩 중...",
     "viewer.fileReadError": "파일 읽기 오류",
     "viewer.noSearchResults": "검색 결과 없음",
@@ -48,6 +50,9 @@ export const translations = {
     "toolbar.followTooltip": "일시정지/재생 토글 (F)",
     "toolbar.sshPrefix": "[SSH]",
     "toolbar.language": "언어",
+    "toolbar.wrapLines": "줄바꿈",
+    "toolbar.wrapOn": "줄바꿈 켜짐",
+    "toolbar.wrapOff": "줄바꿈 꺼짐",
     // FilterPanel
     "filter.label": "필터:",
     "filter.toggleAll": "전체 선택/해제",
@@ -131,6 +136,8 @@ export const translations = {
     "sidebar.edit": "Edit",
     "sidebar.delete": "Delete",
     "sidebar.openFile": "Open File",
+    "sidebar.collapse": "Collapse sidebar",
+    "sidebar.expand": "Expand sidebar",
     // TabBar
     "tabBar.noFiles": "No files open",
     "tabBar.closeTab": "Close tab",
@@ -139,8 +146,8 @@ export const translations = {
     "tabBar.paused": "Paused",
     "tabBar.pausedUnread": "Paused · unread changes",
     // LogViewer
-    "viewer.openFileHint": "Open a file to view logs",
-    "viewer.openFileSub": "Use the \"Open File\" button in the sidebar",
+    "viewer.openFileHint": "Logr",
+    "viewer.openFileSub": "A log viewer of developers, by developers, for developers",
     "viewer.loading": "Loading...",
     "viewer.fileReadError": "File read error",
     "viewer.noSearchResults": "No search results",
@@ -164,6 +171,9 @@ export const translations = {
     "toolbar.followTooltip": "Pause / Resume (F)",
     "toolbar.sshPrefix": "[SSH]",
     "toolbar.language": "Language",
+    "toolbar.wrapLines": "Wrap",
+    "toolbar.wrapOn": "Word wrap on",
+    "toolbar.wrapOff": "Word wrap off",
     // FilterPanel
     "filter.label": "Filter:",
     "filter.toggleAll": "Toggle all",

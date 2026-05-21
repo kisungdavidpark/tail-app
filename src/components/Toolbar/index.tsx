@@ -18,7 +18,7 @@ interface ToolbarProps {
 export default function Toolbar({ onExport, displayLineCountRef }: ToolbarProps) {
   const t = useT();
   const { getActiveTab, updateTab } = useTabStore();
-  const { language, setLanguage } = useSettingsStore();
+  const { language, setLanguage, wrapLines, setWrapLines } = useSettingsStore();
   const activeTab = getActiveTab();
 
   const [showEncodings, setShowEncodings] = useState(false);
@@ -85,6 +85,20 @@ export default function Toolbar({ onExport, displayLineCountRef }: ToolbarProps)
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        {/* 줄바꿈 토글 */}
+        <button
+          className="px-2 py-0.5 rounded text-xs hover:opacity-80 font-mono"
+          style={{
+            backgroundColor: wrapLines ? "rgba(79,142,247,0.18)" : "var(--color-bg-tertiary)",
+            color: wrapLines ? "var(--color-accent)" : "var(--color-text-secondary)",
+            border: `1px solid ${wrapLines ? "var(--color-accent)" : "transparent"}`,
+          }}
+          onClick={() => setWrapLines(!wrapLines)}
+          title={wrapLines ? t("toolbar.wrapOn") : t("toolbar.wrapOff")}
+        >
+          {t("toolbar.wrapLines")}
+        </button>
+
         {/* About 버튼 */}
         <button
           className="px-2 py-0.5 rounded text-xs hover:opacity-80 font-mono"

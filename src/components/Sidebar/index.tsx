@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useBookmarkStore } from "../../stores/bookmarkStore";
@@ -14,16 +14,46 @@ type SshDialog =
   | { type: "edit"; connection: SshConnection }
   | { type: "open"; connection: SshConnection };
 
+const MIN_WIDTH = 160;
+const MAX_WIDTH = 480;
+const COLLAPSED_WIDTH = 44;
+
 export default function Sidebar() {
   const t = useT();
   const { bookmarks, addBookmark, removeBookmark } = useBookmarkStore();
   const { addTab, getActiveTab } = useTabStore();
-  const { defaultEncoding } = useSettingsStore();
+  const { defaultEncoding, sidebarCollapsed, sidebarWidth, setSidebarCollapsed, setSidebarWidth } = useSettingsStore();
   const { connections, addConnection, updateConnection, removeConnection, connectedIds, setConnected } = useSshStore();
   const activeTab = getActiveTab();
 
   const [sshDialog, setSshDialog] = useState<SshDialog | null>(null);
   const [connectingBmId, setConnectingBmId] = useState<string | null>(null);
+
+  // 리사이즈 드래그
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(sidebarWidth);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = sidebarWidth;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = ev.clientX - dragStartX.current;
+      const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, dragStartWidth.current + delta));
+      setSidebarWidth(next);
+    };
+    const onMouseUp = () => {
+      isDragging.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [sidebarWidth, setSidebarWidth]);
 
   const handleOpenFile = async () => {
     const selected = await open({ multiple: true });
@@ -57,7 +87,6 @@ export default function Sidebar() {
     }
     const conn = connections.find((c) => c.id === sshConnectionId);
     if (!conn) {
-      // 연결 정보가 삭제된 경우
       alert(`SSH 접속 정보를 찾을 수 없습니다 (id: ${sshConnectionId})`);
       return;
     }
@@ -103,17 +132,94 @@ export default function Sidebar() {
     ? bookmarks.some((b) => b.filePath === activeTab.filePath && b.sshConnectionId === activeTab.sshConnectionId)
     : false;
 
+  // ── 접힌 상태: 아이콘 스트립 ──
+  if (sidebarCollapsed) {
+    return (
+      <aside
+        className="flex flex-col items-center py-2 gap-1 shrink-0"
+        style={{
+          width: COLLAPSED_WIDTH,
+          minWidth: COLLAPSED_WIDTH,
+          backgroundColor: "var(--color-bg-secondary)",
+          borderRight: "1px solid var(--color-border)",
+        }}
+      >
+        {/* 펼치기 */}
+        <button
+          className="w-8 h-8 flex items-center justify-center rounded hover:opacity-80 transition-opacity"
+          style={{ color: "var(--color-accent)", fontSize: 16 }}
+          onClick={() => setSidebarCollapsed(false)}
+          title={t("sidebar.expand")}
+        >
+          ›
+        </button>
+
+        <div style={{ width: 28, height: 1, backgroundColor: "var(--color-border)", margin: "4px 0" }} />
+
+        {/* 즐겨찾기 */}
+        <button
+          className="w-8 h-8 flex items-center justify-center rounded hover:opacity-80 transition-opacity text-sm"
+          style={{ color: bookmarks.length > 0 ? "var(--color-accent)" : "var(--color-text-secondary)" }}
+          onClick={() => setSidebarCollapsed(false)}
+          title={`${t("sidebar.bookmarks")} (${bookmarks.length})`}
+        >
+          ★
+        </button>
+
+        {/* SSH */}
+        <button
+          className="w-8 h-8 flex items-center justify-center rounded hover:opacity-80 transition-opacity text-xs font-bold"
+          style={{ color: connections.length > 0 ? "var(--color-accent)" : "var(--color-text-secondary)" }}
+          onClick={() => setSidebarCollapsed(false)}
+          title={`${t("sidebar.ssh")} (${connections.length})`}
+        >
+          SSH
+        </button>
+
+        <div style={{ flex: 1 }} />
+
+        {/* 파일 열기 */}
+        <button
+          className="w-8 h-8 flex items-center justify-center rounded hover:opacity-80 transition-opacity"
+          style={{ color: "var(--color-text-secondary)", fontSize: 16 }}
+          onClick={handleOpenFile}
+          title={t("sidebar.openFile")}
+        >
+          +
+        </button>
+      </aside>
+    );
+  }
+
+  // ── 펼친 상태 ──
   return (
     <aside
-      className="flex flex-col h-full border-r"
-      style={{ width: 220, minWidth: 220, backgroundColor: "var(--color-bg-secondary)", borderColor: "var(--color-border)" }}
+      className="flex flex-col h-full relative"
+      style={{
+        width: sidebarWidth,
+        minWidth: sidebarWidth,
+        backgroundColor: "var(--color-bg-secondary)",
+        borderRight: "1px solid var(--color-border)",
+        userSelect: "none",
+      }}
     >
-      {/* ── 즐겨찾기 ── */}
+      {/* ── 즐겨찾기 헤더 ── */}
       <div
         className="flex items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wider shrink-0"
         style={{ color: "var(--color-text-secondary)", borderBottom: "1px solid var(--color-border)" }}
       >
-        <span>{t("sidebar.bookmarks")}</span>
+        <div className="flex items-center gap-2">
+          {/* 접기 버튼 */}
+          <button
+            className="hover:opacity-80 transition-opacity"
+            style={{ color: "var(--color-text-secondary)", fontSize: 14, lineHeight: 1 }}
+            onClick={() => setSidebarCollapsed(true)}
+            title={t("sidebar.collapse")}
+          >
+            ‹
+          </button>
+          <span>{t("sidebar.bookmarks")}</span>
+        </div>
         <button
           className="hover:opacity-80 transition-opacity text-sm"
           style={{
@@ -133,7 +239,7 @@ export default function Sidebar() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0" style={{ userSelect: "text" }}>
         {bookmarks.length === 0 ? (
           <div
             className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center text-xs"
@@ -166,7 +272,7 @@ export default function Sidebar() {
                       </span>
                     </div>
                     {bm.sshConnectionId && sshConn && (
-                      <div className="truncate pl-0" style={{ color: "var(--color-text-secondary)", fontSize: 10 }}>
+                      <div className="truncate" style={{ color: "var(--color-text-secondary)", fontSize: 10 }}>
                         {sshConn.host}
                       </div>
                     )}
@@ -238,7 +344,7 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* ── 파일 열기 버튼 ── */}
+      {/* ── 파일 열기 ── */}
       <div className="p-3" style={{ borderTop: "1px solid var(--color-border)" }}>
         <button
           className="w-full text-xs py-2 px-3 rounded transition-opacity hover:opacity-80 font-medium"
@@ -247,6 +353,34 @@ export default function Sidebar() {
         >
           {t("sidebar.openFile")}
         </button>
+      </div>
+
+      {/* ── 리사이즈 핸들 ── */}
+      <div
+        style={{
+          position: "absolute",
+          right: -3,
+          top: 0,
+          bottom: 0,
+          width: 6,
+          cursor: "col-resize",
+          zIndex: 10,
+        }}
+        onMouseDown={handleResizeMouseDown}
+        className="group"
+      >
+        <div
+          style={{
+            position: "absolute",
+            right: 2,
+            top: 0,
+            bottom: 0,
+            width: 2,
+            backgroundColor: "transparent",
+            transition: "background-color 0.15s",
+          }}
+          className="group-hover:bg-[var(--color-accent)]"
+        />
       </div>
 
       {/* ── 다이얼로그 ── */}

@@ -62,7 +62,7 @@ interface LogViewerProps {
 export default function LogViewer({ onRegisterExport, displayLineCountRef }: LogViewerProps) {
   const t = useT();
   const { getActiveTab, updateTab } = useTabStore();
-  const { defaultTailLines } = useSettingsStore();
+  const { defaultTailLines, wrapLines } = useSettingsStore();
   const activeTab = getActiveTab();
 
   const [lines, setLines] = useState<LogLine[]>([]);
@@ -191,7 +191,9 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     count: displayLines.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
-    overscan: 30,
+    // 줄바꿈 모드에서 measureElement로 동적 높이 측정
+    measureElement: wrapLines ? (el) => el.getBoundingClientRect().height : undefined,
+    overscan: wrapLines ? 10 : 30,
   });
 
   const isSshTab = !!activeTab?.sshConnectionId;
@@ -461,16 +463,36 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [activeTab?.id, activeTab?.isFollowing]);
 
-  // ── 빈 상태 ──
+  // ── 빈 상태: 앱 이름 + 슬로건 ──
   if (!activeTab) {
     return (
       <div
-        className="flex flex-col items-center justify-center flex-1 gap-3 select-none"
+        className="flex flex-col items-center justify-center flex-1 gap-4 select-none"
         style={{ backgroundColor: "var(--color-bg-primary)", color: "var(--color-text-secondary)" }}
       >
-        <div style={{ fontSize: 48, opacity: 0.3 }}>📄</div>
-        <div className="text-sm font-medium">{t("viewer.openFileHint")}</div>
-        <div className="text-xs opacity-60">{t("viewer.openFileSub")}</div>
+        {/* 로고 */}
+        <div style={{ width: 72, height: 72, borderRadius: 18, overflow: "hidden", boxShadow: "0 4px 24px rgba(79,142,247,0.18)" }}>
+          <img src="/logr-icon.svg" alt="Logr" style={{ width: "100%", height: "100%" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        </div>
+        {/* 앱 이름 */}
+        <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", color: "var(--color-text-primary)", fontFamily: "monospace" }}>
+          {t("viewer.openFileHint")}
+        </div>
+        {/* 슬로건 */}
+        <div className="text-xs text-center px-8" style={{ color: "var(--color-text-secondary)", opacity: 0.65, lineHeight: 1.7, maxWidth: 320 }}>
+          {t("viewer.openFileSub")}
+        </div>
+        {/* 힌트 */}
+        <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: "var(--color-text-secondary)", opacity: 0.4 }}>
+          <span>파일을 드래그하거나</span>
+          <span
+            className="px-2 py-0.5 rounded font-mono"
+            style={{ backgroundColor: "var(--color-bg-tertiary)", border: "1px solid var(--color-border)" }}
+          >
+            {t("sidebar.openFile")}
+          </span>
+          <span>버튼을 사용하세요</span>
+        </div>
       </div>
     );
   }
@@ -555,7 +577,6 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
               const line = displayLines[vRow.index];
               const searchMatch = searchMatchMap?.get(vRow.index);
               const isCurrent = searchMatchMap !== null && searchMatchList[currentMatchIdx] === vRow.index;
-              // 가시 영역 줄에 대해서만 하이라이트 계산
               const hlRule = compiledHighlights.length > 0 ? getLineHighlight(line.content) : null;
 
               const bgColor = isCurrent
@@ -569,29 +590,29 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
                 : "transparent";
 
               const textColor = hlRule ? hlRule.color : getLevelColor(line.level);
-              // 현재 매칭: 진한 노랑 / 다른 매칭: 옅은 노랑 / 하이라이트 규칙: 규칙 색상
               const markBg = searchMatch
-                ? isCurrent
-                  ? "rgba(250, 200, 50, 0.65)"
-                  : "rgba(250, 200, 50, 0.28)"
-                : hlRule
-                ? `${hlRule.color}55`
-                : undefined;
+                ? isCurrent ? "rgba(250, 200, 50, 0.65)" : "rgba(250, 200, 50, 0.28)"
+                : hlRule ? `${hlRule.color}55` : undefined;
 
               return (
                 <div
                   key={vRow.key}
+                  data-index={vRow.index}
+                  ref={wrapLines ? virtualizer.measureElement : undefined}
                   style={{
                     position: "absolute",
                     top: vRow.start,
                     left: 0,
                     right: 0,
-                    height: ROW_HEIGHT,
+                    // 줄바꿈 모드: height auto (measureElement가 측정)
+                    height: wrapLines ? undefined : ROW_HEIGHT,
+                    minHeight: ROW_HEIGHT,
                     display: "flex",
-                    alignItems: "center",
+                    alignItems: wrapLines ? "flex-start" : "center",
                     backgroundColor: bgColor,
                   }}
                 >
+                  {/* 줄 번호 */}
                   <span
                     className="shrink-0 text-right select-none"
                     style={{
@@ -599,17 +620,29 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
                       minWidth: 52,
                       paddingRight: 8,
                       paddingLeft: 4,
+                      paddingTop: wrapLines ? 2 : 0,
                       color: "var(--color-text-secondary)",
                       opacity: 0.45,
                       fontSize: 11,
+                      lineHeight: `${ROW_HEIGHT}px`,
                     }}
                   >
                     {line.index + 1}
                   </span>
+                  {/* 내용 */}
                   <span
-                    className="truncate pr-2"
-                    style={{ fontSize: 12, lineHeight: `${ROW_HEIGHT}px`, flex: 1, minWidth: 0 }}
-                    title={line.content}
+                    className={wrapLines ? "pr-2" : "truncate pr-2"}
+                    style={{
+                      fontSize: 12,
+                      lineHeight: `${ROW_HEIGHT}px`,
+                      flex: 1,
+                      minWidth: 0,
+                      whiteSpace: wrapLines ? "pre-wrap" : "nowrap",
+                      wordBreak: wrapLines ? "break-all" : undefined,
+                      paddingTop: wrapLines ? 2 : 0,
+                      paddingBottom: wrapLines ? 2 : 0,
+                    }}
+                    title={wrapLines ? undefined : line.content}
                   >
                     <HighlightedContent
                       content={line.content}
