@@ -98,6 +98,7 @@ const CONTENT = {
       { label: "Enter", desc: "다음 검색 결과" },
       { label: "Shift+Enter", desc: "이전 검색 결과" },
       { label: "Esc", desc: "검색 닫기" },
+      { label: ":N  (검색창에서)", desc: "N번 줄로 바로 이동 (예: :1234 입력 후 Enter)" },
     ],
     about: {
       name: "Tail — 리얼타임 로그 뷰어",
@@ -195,6 +196,7 @@ const CONTENT = {
       { label: "Enter", desc: "Next search result" },
       { label: "Shift+Enter", desc: "Previous search result" },
       { label: "Esc", desc: "Close search" },
+      { label: ":N  (in search bar)", desc: "Jump to line N (e.g., type :1234 then Enter)" },
     ],
     about: {
       name: "Tail — Realtime Log Viewer",

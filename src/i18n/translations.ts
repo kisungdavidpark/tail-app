@@ -30,6 +30,7 @@ export const translations = {
     "viewer.noSearchResults": "검색 결과 없음",
     "viewer.fileEmpty": "파일이 비어 있습니다",
     "viewer.jumpToLatest": "↓ 최신 줄로",
+    "viewer.cappedNotice": `최근 ${(200_000).toLocaleString()}줄만 표시 중 (대용량 파일 — 이전 내용은 검색으로 확인하세요)`,
     // Toolbar
     "toolbar.noFile": "파일 없음",
     "toolbar.changeEncoding": "인코딩 변경",
@@ -55,7 +56,9 @@ export const translations = {
     "filter.excludePlaceholder": "제외...",
     "filter.reset": "✕ 초기화",
     // SearchBar
-    "search.placeholder": "검색... (Enter: 다음, Shift+Enter: 이전)",
+    "search.placeholder": "검색...  :N → 줄 번호로 이동",
+    "search.lineJumpPlaceholder": ":줄번호 입력 후 Enter",
+    "search.lineJump": "줄 이동",
     "search.noResults": "결과 없음",
     "search.prev": "이전 (Shift+Enter)",
     "search.next": "다음 (Enter)",
@@ -143,6 +146,7 @@ export const translations = {
     "viewer.noSearchResults": "No search results",
     "viewer.fileEmpty": "File is empty",
     "viewer.jumpToLatest": "↓ Jump to latest",
+    "viewer.cappedNotice": `Showing last ${(200_000).toLocaleString()} lines (large file — use search to find earlier content)`,
     // Toolbar
     "toolbar.noFile": "No file",
     "toolbar.changeEncoding": "Change encoding",
@@ -168,7 +172,9 @@ export const translations = {
     "filter.excludePlaceholder": "Exclude...",
     "filter.reset": "✕ Reset",
     // SearchBar
-    "search.placeholder": "Search... (Enter: next, Shift+Enter: prev)",
+    "search.placeholder": "Search...  :N → jump to line",
+    "search.lineJumpPlaceholder": "Enter :line number then Enter",
+    "search.lineJump": "Line jump",
     "search.noResults": "No results",
     "search.prev": "Previous (Shift+Enter)",
     "search.next": "Next (Enter)",

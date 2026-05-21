@@ -19,15 +19,11 @@ const LEVEL_COLORS: Record<string, string> = {
 };
 
 const ROW_HEIGHT = 18;
+// 메모리에 유지할 최대 줄 수 — 초과 시 앞쪽을 잘라냄
+const MAX_LINES = 200_000;
 
 function getLevelColor(level?: string): string {
   return level ? (LEVEL_COLORS[level] ?? "var(--color-text-primary)") : "var(--color-text-primary)";
-}
-
-interface MatchInfo {
-  lineIndex: number;
-  matchStart: number;
-  matchEnd: number;
 }
 
 function HighlightedContent({
@@ -35,22 +31,22 @@ function HighlightedContent({
   color,
   matchStart,
   matchEnd,
-  markColor,
+  markBg,
 }: {
   content: string;
   color: string;
   matchStart?: number;
   matchEnd?: number;
-  markColor?: string;
+  markBg?: string;
 }) {
   if (matchStart === undefined || matchEnd === undefined) {
     return <span style={{ color }}>{content}</span>;
   }
-  const markBg = markColor ? `${markColor}55` : "rgba(250, 200, 50, 0.45)";
+  const bg = markBg ?? "rgba(250, 200, 50, 0.45)";
   return (
     <span style={{ color }}>
       {content.slice(0, matchStart)}
-      <mark style={{ backgroundColor: markBg, color: "inherit", borderRadius: 2, padding: "0 1px" }}>
+      <mark style={{ backgroundColor: bg, color: "inherit", borderRadius: 2, padding: "0 1px" }}>
         {content.slice(matchStart, matchEnd)}
       </mark>
       {content.slice(matchEnd)}
@@ -73,10 +69,12 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [isCapped, setIsCapped] = useState(false);
 
-  // 검색 상태
+  // 검색 상태 — 네비게이션 모드: 전체 뷰 유지, 매칭 줄 강조 + 이동
   const [showSearch, setShowSearch] = useState(false);
-  const [searchMatches, setSearchMatches] = useState<MatchInfo[] | null>(null);
+  const [searchMatchMap, setSearchMatchMap] = useState<Map<number, { start: number; end: number }> | null>(null);
+  const [searchMatchList, setSearchMatchList] = useState<number[]>([]);
   const [currentMatchIdx, setCurrentMatchIdx] = useState(0);
 
   // 필터 상태
@@ -92,6 +90,9 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
   updateTabRef.current = updateTab;
   const lastLineCountRef = useRef(0);
   const justResumedRef = useRef(false);
+  // 검색 디바운스 + 파라미터 보존 (filteredLines 변경 시 재검색)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchParamsRef = useRef<{ query: string; isRegex: boolean; caseSensitive: boolean } | null>(null);
 
   const triggerBounceAnimation = useCallback(() => {
     const el = innerContentRef.current;
@@ -107,7 +108,7 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     );
   }, []);
 
-  // 필터 적용 → 검색 적용 순서로 표시할 줄 결정
+  // 필터 적용
   const filteredLines = useMemo(() => {
     const allLevels = ["ERROR", "WARN", "INFO", "DEBUG"] as LogLevel[];
     const allSelected = allLevels.every((l) => filter.levels.has(l));
@@ -119,7 +120,6 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
       : (text: string, pattern: string) => text.toLowerCase().includes(pattern.toLowerCase());
 
     return lines.filter((line) => {
-      // 레벨 필터 활성 시: 레벨 없는 줄도 제외, 선택한 레벨만 통과
       if (!allSelected) {
         if (!line.level || !filter.levels.has(line.level as LogLevel)) return false;
       }
@@ -129,12 +129,10 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     });
   }, [lines, filter]);
 
-  const displayLines = useMemo(() => {
-    if (!searchMatches) return filteredLines;
-    return searchMatches.map((m) => filteredLines[m.lineIndex]);
-  }, [filteredLines, searchMatches]);
+  // 검색 모드에서도 filteredLines 전체를 표시 (필터링 X, 네비게이션만)
+  const displayLines = filteredLines;
 
-  // displayLines가 커밋될 때마다 내보내기 핸들러를 갱신 (직접 클로저, ref 지연 없음)
+  // displayLines 커밋 시 내보내기 핸들러 갱신
   useLayoutEffect(() => {
     displayLineCountRef.current = displayLines.length;
     const snapshot = displayLines;
@@ -161,26 +159,33 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     });
   }, [displayLines, onRegisterExport, displayLineCountRef]);
 
-  // 하이라이트 규칙 적용: 첫 번째 매칭 규칙의 색상 + 매칭 위치 반환
-  const lineHighlights = useMemo(() => {
+  // 하이라이트 규칙 — 정규식 컴파일을 미리 캐싱 (useMemo)
+  const compiledHighlights = useMemo(() => {
     const rules = activeTab?.highlights ?? [];
-    if (!rules.length) return new Map<number, { color: string; start: number; end: number }>();
-    const map = new Map<number, { color: string; start: number; end: number }>();
-    displayLines.forEach((line, idx) => {
-      for (const rule of rules) {
-        try {
-          const pat = rule.isRegex ? rule.pattern : rule.pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const re = new RegExp(pat, "i");
-          const m = re.exec(line.content);
-          if (m) {
-            map.set(idx, { color: rule.color, start: m.index, end: m.index + m[0].length });
-            break;
-          }
-        } catch {}
+    return rules.flatMap((rule) => {
+      try {
+        const pat = rule.isRegex
+          ? rule.pattern
+          : rule.pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return [{ re: new RegExp(pat, "i"), color: rule.color }];
+      } catch {
+        return [];
       }
     });
-    return map;
-  }, [displayLines, activeTab?.highlights]);
+  }, [activeTab?.highlights]);
+
+  // 가시 영역의 줄에 대해서만 하이라이트 계산 (전체 순회 없음)
+  const getLineHighlight = useCallback(
+    (content: string) => {
+      for (const { re, color } of compiledHighlights) {
+        re.lastIndex = 0;
+        const m = re.exec(content);
+        if (m) return { color, start: m.index, end: m.index + m[0].length };
+      }
+      return null;
+    },
+    [compiledHighlights]
+  );
 
   const virtualizer = useVirtualizer({
     count: displayLines.length,
@@ -193,12 +198,19 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
 
   // 초기 파일 로드
   useEffect(() => {
-    if (!activeTab) { setLines([]); setError(null); filePosRef.current = 0; return; }
+    if (!activeTab) {
+      setLines([]); setError(null); filePosRef.current = 0;
+      setSearchMatchMap(null); setSearchMatchList([]);
+      return;
+    }
     let cancelled = false;
     setIsLoading(true);
     setError(null);
     setLines([]);
-    setSearchMatches(null);
+    setIsCapped(false);
+    setSearchMatchMap(null);
+    setSearchMatchList([]);
+    searchParamsRef.current = null;
     atBottomRef.current = true;
     filePosRef.current = 0;
     lastLineCountRef.current = 0;
@@ -244,11 +256,17 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     return () => { cancelled = true; };
   }, [activeTab?.id, activeTab?.filePath, activeTab?.encoding, defaultTailLines]);
 
-  // 새 줄 추가 (follow 모드)
+  // 새 줄 추가 — MAX_LINES 초과 시 앞쪽 제거
   const handleNewLines = useCallback((newLines: LogLine[]) => {
     setLines((prev) => {
       const base = prev.length > 0 ? prev[prev.length - 1].index + 1 : 0;
-      return [...prev, ...newLines.map((l, i) => ({ ...l, index: base + i }))];
+      const mapped = newLines.map((l, i) => ({ ...l, index: base + i }));
+      const combined = [...prev, ...mapped];
+      if (combined.length > MAX_LINES) {
+        setIsCapped(true);
+        return combined.slice(combined.length - MAX_LINES);
+      }
+      return combined;
     });
   }, []);
 
@@ -269,27 +287,27 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     filePosRef
   );
 
-  // 초기 로드 완료 후 하단 스크롤
+  // 초기 로드 후 하단 스크롤
   useEffect(() => {
     if (!isLoading && lines.length > 0) {
       virtualizer.scrollToIndex(lines.length - 1, { align: "end" });
     }
   }, [isLoading]);
 
-  // isFollowing이 true로 바뀌면 다음 배치에서 바운스 트리거 준비
+  // isFollowing이 true로 바뀌면 다음 배치에서 바운스 준비
   useEffect(() => {
     if (activeTab?.isFollowing) {
       justResumedRef.current = true;
     }
   }, [activeTab?.isFollowing]);
 
-  // 새 줄 도착 시: 하단이면 자동 스크롤, 아니면 hasUnread 표시
+  // 새 줄 도착: 하단이면 자동 스크롤, 아니면 hasUnread
   useEffect(() => {
     if (lines.length === 0) return;
     const batchSize = lines.length - lastLineCountRef.current;
     lastLineCountRef.current = lines.length;
     if (atBottomRef.current) {
-      if (activeTab?.isFollowing && !searchMatches) {
+      if (activeTab?.isFollowing && !searchMatchMap) {
         virtualizer.scrollToIndex(lines.length - 1, { align: "end" });
         if (justResumedRef.current && batchSize >= 1) {
           justResumedRef.current = false;
@@ -301,7 +319,7 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     }
   }, [lines.length]);
 
-  // 일시정지 중 파일 변경 감지 (2초 폴링, 로컬 + SSH)
+  // 일시정지 중 파일 변경 감지 (2초 폴링)
   useEffect(() => {
     if (!activeTab || activeTab.isFollowing) return;
     const tabId = activeTab.id;
@@ -331,42 +349,95 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     }
   }, []);
 
-  // ── 검색 ──
+  // ── 검색 (네비게이션 모드) ──
   const runSearch = useCallback(
     (query: string, isRegex: boolean, caseSensitive: boolean) => {
-      if (!query) { setSearchMatches(null); return; }
-      try {
-        const flags = caseSensitive ? "" : "i";
-        const pattern = isRegex
-          ? query
-          : query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const re = new RegExp(pattern, flags);
-
-        const matches: MatchInfo[] = [];
-        filteredLines.forEach((line, idx) => {
-          const m = re.exec(line.content);
-          if (m) matches.push({ lineIndex: idx, matchStart: m.index, matchEnd: m.index + m[0].length });
-        });
-        setSearchMatches(matches);
-        setCurrentMatchIdx(0);
-        if (matches.length > 0) {
-          setTimeout(() => virtualizer.scrollToIndex(0, { align: "center" }), 0);
-        }
-      } catch {
-        setSearchMatches([]);
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      if (!query) {
+        setSearchMatchMap(null);
+        setSearchMatchList([]);
+        return;
       }
+
+      searchTimerRef.current = setTimeout(() => {
+        // ":N" 줄 번호로 이동
+        if (/^:\d+$/.test(query.trim())) {
+          const lineNum = parseInt(query.trim().slice(1), 10);
+          const targetIdx = filteredLines.findIndex((l) => l.index + 1 === lineNum);
+          if (targetIdx >= 0) {
+            requestAnimationFrame(() =>
+              virtualizer.scrollToIndex(targetIdx, { align: "center" })
+            );
+          }
+          setSearchMatchMap(new Map());
+          setSearchMatchList([]);
+          return;
+        }
+
+        try {
+          const flags = caseSensitive ? "" : "i";
+          const pattern = isRegex
+            ? query
+            : query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const re = new RegExp(pattern, flags);
+
+          const matchMap = new Map<number, { start: number; end: number }>();
+          const matchList: number[] = [];
+          filteredLines.forEach((line, idx) => {
+            re.lastIndex = 0;
+            const m = re.exec(line.content);
+            if (m) {
+              matchMap.set(idx, { start: m.index, end: m.index + m[0].length });
+              matchList.push(idx);
+            }
+          });
+
+          setSearchMatchMap(matchMap);
+          setSearchMatchList(matchList);
+          setCurrentMatchIdx(0);
+          if (matchList.length > 0) {
+            requestAnimationFrame(() =>
+              virtualizer.scrollToIndex(matchList[0], { align: "center" })
+            );
+          }
+        } catch {
+          setSearchMatchMap(new Map());
+          setSearchMatchList([]);
+        }
+      }, 200);
     },
-    [filteredLines]
+    [filteredLines, virtualizer]
+  );
+
+  // runSearch 최신 참조 유지 (re-search effect에서 사용)
+  const runSearchRef = useRef(runSearch);
+  runSearchRef.current = runSearch;
+
+  // filteredLines 변경 시 진행 중인 검색 재실행
+  useEffect(() => {
+    const p = searchParamsRef.current;
+    if (p?.query) {
+      runSearchRef.current(p.query, p.isRegex, p.caseSensitive);
+    }
+  }, [filteredLines]);
+
+  // 검색 파라미터 저장 후 runSearch 호출
+  const handleSearch = useCallback(
+    (query: string, isRegex: boolean, caseSensitive: boolean) => {
+      searchParamsRef.current = query ? { query, isRegex, caseSensitive } : null;
+      runSearch(query, isRegex, caseSensitive);
+    },
+    [runSearch]
   );
 
   const goToMatch = useCallback(
     (idx: number) => {
-      if (!searchMatches || searchMatches.length === 0) return;
-      const next = (idx + searchMatches.length) % searchMatches.length;
+      if (searchMatchList.length === 0) return;
+      const next = (idx + searchMatchList.length) % searchMatchList.length;
       setCurrentMatchIdx(next);
-      virtualizer.scrollToIndex(next, { align: "center" });
+      virtualizer.scrollToIndex(searchMatchList[next], { align: "center" });
     },
-    [searchMatches, virtualizer]
+    [searchMatchList, virtualizer]
   );
 
   // ── 키보드 단축키 ──
@@ -375,7 +446,6 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
       const target = e.target as HTMLElement;
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA";
 
-      // Ctrl+F / Cmd+F: 검색 열기
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
         setShowSearch(true);
@@ -383,7 +453,6 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
       }
       if (isInput) return;
 
-      // F: follow 모드 토글
       if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey) {
         if (activeTab) updateTab(activeTab.id, { isFollowing: !activeTab.isFollowing });
       }
@@ -439,15 +508,31 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
       {/* 필터 패널 */}
       <FilterPanel filter={filter} onChange={setFilter} />
 
+      {/* 대용량 파일 캡 알림 */}
+      {isCapped && (
+        <div
+          className="shrink-0 px-3 py-1 text-xs select-none"
+          style={{ backgroundColor: "rgba(251,191,36,0.08)", borderBottom: "1px solid rgba(251,191,36,0.2)", color: "#fbbf24" }}
+        >
+          {t("viewer.cappedNotice")}
+        </div>
+      )}
+
       {/* 검색 바 */}
       {showSearch && (
         <SearchBar
-          onSearch={runSearch}
-          onClose={() => { setShowSearch(false); setSearchMatches(null); }}
-          resultCount={searchMatches?.length ?? null}
+          onSearch={handleSearch}
+          onClose={() => {
+            setShowSearch(false);
+            setSearchMatchMap(null);
+            setSearchMatchList([]);
+            searchParamsRef.current = null;
+          }}
+          resultCount={searchMatchMap !== null ? searchMatchList.length : null}
           currentIndex={currentMatchIdx}
           onPrev={() => goToMatch(currentMatchIdx - 1)}
           onNext={() => goToMatch(currentMatchIdx + 1)}
+          hasQuery={searchParamsRef.current !== null}
         />
       )}
 
@@ -462,18 +547,21 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
             className="flex items-center justify-center h-full italic"
             style={{ color: "var(--color-text-secondary)" }}
           >
-            {searchMatches !== null ? t("viewer.noSearchResults") : t("viewer.fileEmpty")}
+            {t("viewer.fileEmpty")}
           </div>
         ) : (
           <div ref={innerContentRef} style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
             {virtualizer.getVirtualItems().map((vRow) => {
               const line = displayLines[vRow.index];
-              const match = searchMatches?.[vRow.index];
-              const isCurrent = searchMatches !== null && vRow.index === currentMatchIdx;
-              const hlRule = lineHighlights.get(vRow.index);
+              const searchMatch = searchMatchMap?.get(vRow.index);
+              const isCurrent = searchMatchMap !== null && searchMatchList[currentMatchIdx] === vRow.index;
+              // 가시 영역 줄에 대해서만 하이라이트 계산
+              const hlRule = compiledHighlights.length > 0 ? getLineHighlight(line.content) : null;
 
               const bgColor = isCurrent
-                ? "rgba(79, 142, 247, 0.15)"
+                ? "rgba(79, 142, 247, 0.18)"
+                : searchMatch
+                ? "rgba(250, 204, 21, 0.07)"
                 : hlRule
                 ? `${hlRule.color}28`
                 : line.level === "ERROR"
@@ -481,6 +569,14 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
                 : "transparent";
 
               const textColor = hlRule ? hlRule.color : getLevelColor(line.level);
+              // 현재 매칭: 진한 노랑 / 다른 매칭: 옅은 노랑 / 하이라이트 규칙: 규칙 색상
+              const markBg = searchMatch
+                ? isCurrent
+                  ? "rgba(250, 200, 50, 0.65)"
+                  : "rgba(250, 200, 50, 0.28)"
+                : hlRule
+                ? `${hlRule.color}55`
+                : undefined;
 
               return (
                 <div
@@ -518,9 +614,9 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
                     <HighlightedContent
                       content={line.content}
                       color={textColor}
-                      matchStart={match?.matchStart ?? hlRule?.start}
-                      matchEnd={match?.matchEnd ?? hlRule?.end}
-                      markColor={match ? undefined : hlRule?.color}
+                      matchStart={searchMatch?.start ?? hlRule?.start}
+                      matchEnd={searchMatch?.end ?? hlRule?.end}
+                      markBg={markBg}
                     />
                   </span>
                 </div>
@@ -530,7 +626,7 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
         )}
       </div>
 
-      {/* follow + 위로 스크롤 시 "최신 줄로" 버튼 */}
+      {/* follow 중 위로 스크롤 시 "최신 줄로" 버튼 */}
       {activeTab.isFollowing && !isAtBottom && (
         <div
           className="absolute bottom-2 right-4 text-xs px-3 py-1 rounded-full cursor-pointer select-none"
