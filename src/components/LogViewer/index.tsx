@@ -518,7 +518,7 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
           {t("viewer.openFileHint")}
         </div>
         {/* 슬로건 */}
-        <div className="text-xs text-center px-8" style={{ color: "var(--color-text-secondary)", opacity: 0.65, lineHeight: 1.7, maxWidth: 320 }}>
+        <div className="text-xs" style={{ color: "var(--color-text-secondary)", opacity: 0.65, whiteSpace: "nowrap" }}>
           {t("viewer.openFileSub")}
         </div>
         {/* 힌트 */}
