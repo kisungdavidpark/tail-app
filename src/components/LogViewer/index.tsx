@@ -72,7 +72,12 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
   const [isCapped, setIsCapped] = useState(false);
 
   // 우클릭 컨텍스트 메뉴
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; selectedText: string } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number; y: number; selectedText: string;
+    lineRaw?: string;   // 클릭된 행의 원본 바이트 (Latin-1)
+    lineContent?: string; // 클릭된 행의 현재 표시 텍스트
+  } | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
 
   // 검색 상태 — 네비게이션 모드: 전체 뷰 유지, 매칭 줄 강조 + 이동
   const [showSearch, setShowSearch] = useState(false);
@@ -458,28 +463,64 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
     if (!activeTab) return;
     e.preventDefault();
     const selectedText = window.getSelection()?.toString().trim() ?? "";
-    setCtxMenu({ x: e.clientX, y: e.clientY, selectedText });
-  }, [activeTab]);
 
-  const handleReEncodeSelected = useCallback(async (toEncoding: string, selectedText: string) => {
+    // 우클릭된 가상 행의 원본 바이트 가져오기 (data-index 속성으로 탐색)
+    let lineRaw: string | undefined;
+    let lineContent: string | undefined;
+    const rowEl = (e.target as HTMLElement).closest('[data-index]');
+    if (rowEl) {
+      const idx = parseInt(rowEl.getAttribute('data-index') ?? '-1', 10);
+      if (idx >= 0 && displayLines[idx]) {
+        lineRaw = displayLines[idx].raw;
+        lineContent = displayLines[idx].content;
+      }
+    }
+
+    setCtxMenu({ x: e.clientX, y: e.clientY, selectedText, lineRaw, lineContent });
+  }, [activeTab, displayLines]);
+
+  const handleReEncodeSelected = useCallback(async (
+    toEncoding: string,
+    selectedText: string,
+    lineRaw?: string,
+    lineContent?: string,
+  ) => {
     setCtxMenu(null);
-    if (!selectedText) return;
-    const fromEncoding = activeTab?.encoding ?? "UTF-8";
+    if (!lineRaw && !selectedText) return;
+    const displayOriginal = selectedText || lineContent || "";
     try {
-      const result = await invoke<string>("reencode_text", {
-        text: selectedText,
-        fromEncoding,
-        toEncoding,
-      });
-      setReEncodeResult({ original: selectedText, encoded: result, encoding: toEncoding });
+      let result: string;
+      if (lineRaw) {
+        // 원본 바이트 기반 재해석: UTF-8 대체문자 문제 없이 정확하게 동작
+        result = await invoke<string>("reencode_bytes", { rawLatin1: lineRaw, toEncoding });
+      } else {
+        const fromEncoding = activeTab?.encoding ?? "UTF-8";
+        result = await invoke<string>("reencode_text", { text: selectedText, fromEncoding, toEncoding });
+      }
+      setReEncodeResult({ original: displayOriginal, encoded: result, encoding: toEncoding });
     } catch {
-      setReEncodeResult({ original: selectedText, encoded: selectedText, encoding: toEncoding });
+      setReEncodeResult({ original: displayOriginal, encoded: displayOriginal, encoding: toEncoding });
     }
   }, [activeTab?.encoding]);
 
   const [reEncodeResult, setReEncodeResult] = useState<{
     original: string; encoded: string; encoding: string;
   } | null>(null);
+
+  // 컨텍스트 메뉴 창 경계 밖으로 나가지 않도록 위치 자동 조정
+  useEffect(() => {
+    if (!ctxMenu || !ctxMenuRef.current) return;
+    const menu = ctxMenuRef.current;
+    const rect = menu.getBoundingClientRect();
+    let x = ctxMenu.x;
+    let y = ctxMenu.y;
+    if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 4;
+    if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 4;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+  }, [ctxMenu]);
 
   // ── 키보드 단축키 ──
   useEffect(() => {
@@ -722,6 +763,7 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
         <>
           <div className="fixed inset-0" style={{ zIndex: 400 }} onClick={() => setCtxMenu(null)} />
           <div
+            ref={ctxMenuRef}
             className="fixed flex flex-col py-1 rounded-lg shadow-xl"
             style={{
               left: ctxMenu.x,
@@ -755,7 +797,7 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
                     key={enc}
                     className="text-left px-3 py-1.5 text-xs hover:opacity-80 font-mono"
                     style={{ color: "var(--color-text-primary)" }}
-                    onClick={() => handleReEncodeSelected(enc, ctxMenu.selectedText)}
+                    onClick={() => handleReEncodeSelected(enc, ctxMenu.selectedText, ctxMenu.lineRaw, ctxMenu.lineContent)}
                   >
                     {enc}
                   </button>

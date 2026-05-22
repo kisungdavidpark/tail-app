@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::commands::file::{decode_content, detect_level, extract_timestamp, LogLine};
+use crate::commands::file::{bytes_to_latin1, decode_content, detect_level, extract_timestamp, LogLine};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ReadFromPosResult {
@@ -48,22 +48,28 @@ fn read_new_lines(path: &str, from_pos: u64, encoding: &str) -> Result<(Vec<LogL
     let mut buf = Vec::new();
     file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
 
-    let text = decode_content(&buf, encoding);
+    let chunks: Vec<&[u8]> = buf.split(|&b| b == b'\n').collect();
+    let chunks_len = chunks.len();
+    let chunks_ref: &[&[u8]] = if buf.ends_with(b"\n") && chunks_len > 0 {
+        &chunks[..chunks_len - 1]
+    } else {
+        &chunks
+    };
 
-    let lines: Vec<LogLine> = text
-        .lines()
+    let lines: Vec<LogLine> = chunks_ref
+        .iter()
         .enumerate()
-        .map(|(i, line)| {
-            let raw = line.to_string();
-            let level = detect_level(&raw);
-            let timestamp = extract_timestamp(&raw);
-            LogLine {
-                index: i, // React 쪽에서 기존 lines 개수 기반으로 재인덱싱
-                content: raw.clone(),
-                raw,
-                level,
-                timestamp,
-            }
+        .map(|(i, chunk)| {
+            let line_bytes = if chunk.ends_with(b"\r") {
+                &chunk[..chunk.len() - 1]
+            } else {
+                chunk
+            };
+            let raw = bytes_to_latin1(line_bytes);
+            let content = decode_content(line_bytes, encoding);
+            let level = detect_level(&content);
+            let timestamp = extract_timestamp(&content);
+            LogLine { index: i, content, raw, level, timestamp }
         })
         .collect();
 

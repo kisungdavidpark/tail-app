@@ -41,6 +41,12 @@ pub fn extract_timestamp(line: &str) -> Option<String> {
     if valid { Some(candidate.to_string()) } else { None }
 }
 
+/// 원본 바이트를 Latin-1 문자열로 변환 (각 바이트를 동일한 코드포인트 문자로)
+/// 이를 통해 모든 바이트 시퀀스를 손실 없이 String으로 보존 가능
+pub fn bytes_to_latin1(bytes: &[u8]) -> String {
+    bytes.iter().map(|&b| b as char).collect()
+}
+
 pub fn decode_content(bytes: &[u8], encoding: &str) -> String {
     match encoding.to_uppercase().as_str() {
         "EUC-KR" | "EUCKR" => {
@@ -120,11 +126,22 @@ pub fn encode_content(text: &str, encoding: &str) -> Vec<u8> {
 #[tauri::command]
 pub async fn reencode_text(text: String, from_encoding: String, to_encoding: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        // 표시된 텍스트를 현재 인코딩으로 역변환해 원본 바이트 복원
         let bytes = encode_content(&text, &from_encoding);
-        // 복원된 바이트를 목표 인코딩으로 재해석
         let result = decode_content(&bytes, &to_encoding);
         Ok(result)
+    })
+    .await
+    .map_err(|e| format!("스레드 오류: {e}"))?
+}
+
+/// LogLine.raw (Latin-1 인코딩된 원본 바이트)를 목표 인코딩으로 재해석
+/// UTF-8로 열었을 때 대체문자(U+FFFD)로 깨진 경우에도 원본 바이트를 복원 가능
+#[tauri::command]
+pub async fn reencode_bytes(raw_latin1: String, to_encoding: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        // Latin-1 문자열 → 원본 바이트 복원 (각 char의 코드포인트가 곧 바이트값)
+        let bytes: Vec<u8> = raw_latin1.chars().map(|c| c as u8).collect();
+        Ok(decode_content(&bytes, &to_encoding))
     })
     .await
     .map_err(|e| format!("스레드 오류: {e}"))?
@@ -200,23 +217,32 @@ pub async fn read_tail(
             .map_err(|e| format!("메타데이터 실패: {e}"))?
             .len();
 
-        let content = read_last_n_lines_bytes(file, file_size, lines)?;
-        let text = decode_content(&content, &encoding);
+        let raw_bytes = read_last_n_lines_bytes(file, file_size, lines)?;
 
-        let result: Vec<LogLine> = text
-            .lines()
+        // 디코딩 전에 줄별로 원본 바이트를 분리해 저장 (U+FFFD 대체문자 문제 방지)
+        let chunks: Vec<&[u8]> = raw_bytes.split(|&b| b == b'\n').collect();
+        let chunks_len = chunks.len();
+        let chunks_ref: &[&[u8]] = if raw_bytes.ends_with(b"\n") && chunks_len > 0 {
+            &chunks[..chunks_len - 1]
+        } else {
+            &chunks
+        };
+
+        let result: Vec<LogLine> = chunks_ref
+            .iter()
             .enumerate()
-            .map(|(i, line)| {
-                let raw = line.to_string();
-                let level = detect_level(&raw);
-                let timestamp = extract_timestamp(&raw);
-                LogLine {
-                    index: i,
-                    content: raw.clone(),
-                    raw,
-                    level,
-                    timestamp,
-                }
+            .map(|(i, chunk)| {
+                // Windows CRLF 대응: 줄 끝 \r 제거
+                let line_bytes = if chunk.ends_with(b"\r") {
+                    &chunk[..chunk.len() - 1]
+                } else {
+                    chunk
+                };
+                let raw = bytes_to_latin1(line_bytes);
+                let content = decode_content(line_bytes, &encoding);
+                let level = detect_level(&content);
+                let timestamp = extract_timestamp(&content);
+                LogLine { index: i, content, raw, level, timestamp }
             })
             .collect();
 

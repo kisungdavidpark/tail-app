@@ -2395,6 +2395,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
+name = "logr"
+version = "0.2.4"
+dependencies = [
+ "async-trait",
+ "chardet",
+ "encoding_rs",
+ "notify",
+ "regex",
+ "russh",
+ "russh-keys",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-store",
+ "tokio",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4264,27 +4285,6 @@ dependencies = [
  "pkg-config",
  "toml 0.8.2",
  "version-compare",
-]
-
-[[package]]
-name = "tail-app"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chardet",
- "encoding_rs",
- "notify",
- "regex",
- "russh",
- "russh-keys",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-store",
- "tokio",
 ]
 
 [[package]]

@@ -18,6 +18,7 @@ pub fn run() {
             commands::file::detect_encoding,
             commands::file::export_lines,
             commands::file::reencode_text,
+            commands::file::reencode_bytes,
             commands::watch::start_watch,
             commands::watch::stop_watch,
             commands::watch::read_lines_from_pos,

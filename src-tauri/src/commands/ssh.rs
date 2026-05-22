@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::commands::file::{decode_content, detect_level, extract_timestamp, LogLine};
+use crate::commands::file::{bytes_to_latin1, decode_content, detect_level, extract_timestamp, LogLine};
 
 // ── 핸들러 ───────────────────────────────────────────────────────────────────
 
@@ -186,16 +186,24 @@ pub async fn ssh_read_tail(
     let handle = { get_handle(&state.0.lock().unwrap(), &connection_id)? };
     let cmd = format!("tail -n {} '{}'", lines, escape_sh(&remote_path));
     let buf = exec_and_read(&handle, &cmd).await?;
-    let text = decode_content(&buf, &encoding);
+    let chunks: Vec<&[u8]> = buf.split(|&b| b == b'\n').collect();
+    let chunks_len = chunks.len();
+    let chunks_ref: &[&[u8]] = if buf.ends_with(b"\n") && chunks_len > 0 {
+        &chunks[..chunks_len - 1]
+    } else {
+        &chunks
+    };
 
-    Ok(text
-        .lines()
+    Ok(chunks_ref
+        .iter()
         .enumerate()
-        .map(|(i, line)| {
-            let raw = line.to_string();
-            let level = detect_level(&raw);
-            let timestamp = extract_timestamp(&raw);
-            LogLine { index: i, content: raw.clone(), raw, level, timestamp }
+        .map(|(i, chunk)| {
+            let line_bytes = if chunk.ends_with(b"\r") { &chunk[..chunk.len() - 1] } else { chunk };
+            let raw = bytes_to_latin1(line_bytes);
+            let content = decode_content(line_bytes, &encoding);
+            let level = detect_level(&content);
+            let timestamp = extract_timestamp(&content);
+            LogLine { index: i, content, raw, level, timestamp }
         })
         .collect())
 }
@@ -254,16 +262,24 @@ pub async fn ssh_start_watch(
                     if let Some(last_nl) = buf.iter().rposition(|&b| b == b'\n') {
                         let complete = buf[..=last_nl].to_vec();
                         buf = buf[last_nl + 1..].to_vec();
-                        let text = decode_content(&complete, &encoding);
-                        let new_lines: Vec<LogLine> = text
-                            .lines()
-                            .filter(|l| !l.is_empty())
+                        let chunks: Vec<&[u8]> = complete.split(|&b| b == b'\n').collect();
+                        let chunks_len = chunks.len();
+                        let chunks_ref: &[&[u8]] = if complete.ends_with(b"\n") && chunks_len > 0 {
+                            &chunks[..chunks_len - 1]
+                        } else {
+                            &chunks
+                        };
+                        let new_lines: Vec<LogLine> = chunks_ref
+                            .iter()
+                            .filter(|chunk| !chunk.is_empty())
                             .enumerate()
-                            .map(|(i, line)| {
-                                let raw = line.to_string();
-                                let level = detect_level(&raw);
-                                let timestamp = extract_timestamp(&raw);
-                                LogLine { index: line_index + i, content: raw.clone(), raw, level, timestamp }
+                            .map(|(i, chunk)| {
+                                let line_bytes = if chunk.ends_with(b"\r") { &chunk[..chunk.len() - 1] } else { chunk };
+                                let raw = bytes_to_latin1(line_bytes);
+                                let content = decode_content(line_bytes, &encoding);
+                                let level = detect_level(&content);
+                                let timestamp = extract_timestamp(&content);
+                                LogLine { index: line_index + i, content, raw, level, timestamp }
                             })
                             .collect();
                         if !new_lines.is_empty() {
