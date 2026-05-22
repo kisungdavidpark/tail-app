@@ -511,7 +511,7 @@ export default function LogViewer({ onRegisterExport, displayLineCountRef }: Log
       >
         {/* 로고 */}
         <div style={{ width: 72, height: 72, borderRadius: 18, overflow: "hidden", boxShadow: "0 4px 24px rgba(79,142,247,0.18)" }}>
-          <img src="/logr-icon.svg" alt="Logr" style={{ width: "100%", height: "100%" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          <img src="/logr-icon.png" alt="Logr" style={{ width: "100%", height: "100%" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         </div>
         {/* 앱 이름 */}
         <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", color: "var(--color-text-primary)", fontFamily: "monospace" }}>
