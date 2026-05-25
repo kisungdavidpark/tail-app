@@ -10,7 +10,7 @@ use crate::commands::file::{bytes_to_latin1, decode_content, detect_level, extra
 
 // ── 핸들러 ───────────────────────────────────────────────────────────────────
 
-struct SshClientHandler;
+pub(crate) struct SshClientHandler;
 
 #[async_trait]
 impl client::Handler for SshClientHandler {
