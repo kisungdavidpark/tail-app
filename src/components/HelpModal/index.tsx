@@ -374,7 +374,7 @@ export default function HelpModal({ appVersion, onClose }: HelpModalProps) {
                 {[
                   { key: c.about.version, val: `v${appVersion}`, mono: true },
                   { key: c.about.license, val: "MIT", mono: false },
-                  { key: c.about.github, val: "kisungdavidpark/logr", mono: true, accent: true },
+                  { key: c.about.github, val: "joyful-builder/logr", mono: true, accent: true },
                 ].map(({ key, val, mono, accent }) => (
                   <div key={key} className="flex justify-between items-center">
                     <span style={{ color: "var(--color-text-secondary)" }}>{key}</span>
