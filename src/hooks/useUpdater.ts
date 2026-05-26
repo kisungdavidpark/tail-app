@@ -19,8 +19,8 @@ export function useUpdater() {
         if (update?.available) {
           setState({ phase: "available", update });
         }
-      } catch {
-        // 업데이트 확인 실패는 조용히 무시
+      } catch (e) {
+        console.warn("Update check failed", e);
       }
     }, 3000);
     return () => clearTimeout(timer);

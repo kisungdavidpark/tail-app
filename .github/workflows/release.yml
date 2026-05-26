@@ -79,50 +79,54 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.target }}
 
-      # tauri-action@v0 버그: .sig 파일을 릴리스에 업로드하지 않아 latest.json 생성 실패
-      # 아래 스텝에서 수동으로 업로드
-      - name: Upload macOS updater signature
+      - name: Upload macOS updater bundle
         if: runner.os == 'macOS'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
-          echo "=== bundle/macos 디렉토리 내용 ==="
-          ls -la "src-tauri/target/${{ matrix.target }}/release/bundle/macos/" 2>/dev/null || echo "디렉토리 없음"
+          set -e
+          MACOS_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          APP=$(find "$MACOS_DIR" -maxdepth 1 -name "*.app" | head -1)
 
-          # .sig 파일 탐색 (전체 번들 디렉토리)
-          SIG=$(find "src-tauri/target/${{ matrix.target }}/release/bundle" -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
-
-          # sig 파일이 없으면 직접 서명 생성
-          if [ -z "$SIG" ]; then
-            echo ".sig 파일 없음 → 직접 서명"
-            BUNDLE=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos" -name "*.app.tar.gz" 2>/dev/null | head -1)
-            echo "번들 파일: $BUNDLE"
-            echo "$TAURI_SIGNING_PRIVATE_KEY" > /tmp/signing_key_b64.txt
-            base64 -d /tmp/signing_key_b64.txt > /tmp/signing.key
-            npx tauri signer sign -k /tmp/signing.key -p "" "$BUNDLE"
-            SIG="${BUNDLE}.sig"
+          if [ -z "$APP" ]; then
+            echo "macOS app bundle not found"
+            find "src-tauri/target/${{ matrix.target }}/release/bundle" -maxdepth 3 -print
+            exit 1
           fi
 
-          echo "서명 파일: $SIG"
-          cp "$SIG" "/tmp/Logr_${{ matrix.arch }}.app.tar.gz.sig"
-          gh release upload "${{ github.ref_name }}" "/tmp/Logr_${{ matrix.arch }}.app.tar.gz.sig" \
+          APP_DIR=$(dirname "$APP")
+          APP_NAME=$(basename "$APP")
+          BUNDLE="/tmp/Logr_${{ matrix.arch }}.app.tar.gz"
+          SIG="${BUNDLE}.sig"
+          SIGNING_KEY=$(printf "%s" "$TAURI_SIGNING_PRIVATE_KEY" | tr -d '\r\n')
+
+          tar -czf "$BUNDLE" -C "$APP_DIR" "$APP_NAME"
+          npx tauri signer sign --private-key "$SIGNING_KEY" "$BUNDLE"
+          gh release upload "${{ github.ref_name }}" \
+            "$BUNDLE" \
+            "$SIG" \
             --repo "${{ github.repository }}" --clobber
 
       - name: Upload Windows updater bundles
         if: runner.os == 'Windows'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         shell: pwsh
         run: |
           $dir = "src-tauri\target\${{ matrix.target }}\release\bundle\msi"
-          Get-ChildItem $dir -Filter "*.msi.zip" | ForEach-Object {
-            gh release upload "${{ github.ref_name }}" $_.FullName --repo "${{ github.repository }}" --clobber
-          }
-          Get-ChildItem $dir -Filter "*.msi.zip.sig" | ForEach-Object {
-            gh release upload "${{ github.ref_name }}" $_.FullName --repo "${{ github.repository }}" --clobber
-          }
+          $msi = Get-ChildItem $dir -Filter "*.msi" | Select-Object -First 1
+          if (-not $msi) { throw "Windows MSI bundle not found" }
+
+          $zip = Join-Path $env:RUNNER_TEMP ($msi.Name + ".zip")
+          Compress-Archive -LiteralPath $msi.FullName -DestinationPath $zip -Force
+          $signingKey = $env:TAURI_SIGNING_PRIVATE_KEY -replace "`r|`n", ""
+          npx tauri signer sign --private-key $signingKey $zip
+
+          gh release upload "${{ github.ref_name }}" $zip "$zip.sig" --repo "${{ github.repository }}" --clobber
 
   generate-updater-json:
     needs: build
