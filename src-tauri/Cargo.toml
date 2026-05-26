@@ -1,6 +1,6 @@
 [package]
 name = "logr"
-version = "0.2.13"
+version = "0.2.14"
 description = "Realtime log viewer — a GUI replacement for Unix tail -f"
 authors = []
 edition = "2021"
