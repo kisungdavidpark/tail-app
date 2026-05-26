@@ -16,13 +16,13 @@ jobs:
         include:
           - platform: macos-latest
             target: aarch64-apple-darwin
-            artifact_ext: dmg
+            arch: aarch64
           - platform: macos-latest
             target: x86_64-apple-darwin
-            artifact_ext: dmg
+            arch: x64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_ext: msi
+            arch: x64
 
     runs-on: ${{ matrix.platform }}
 
@@ -78,3 +78,83 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
+
+      # tauri-action@v0 버그: .sig 파일을 릴리스에 업로드하지 않아 latest.json 생성 실패
+      # 아래 스텝에서 수동으로 업로드
+      - name: Upload macOS updater signature
+        if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SIG=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos" -name "*.app.tar.gz.sig" | head -1)
+          cp "$SIG" "/tmp/Logr_${{ matrix.arch }}.app.tar.gz.sig"
+          gh release upload "${{ github.ref_name }}" "/tmp/Logr_${{ matrix.arch }}.app.tar.gz.sig" \
+            --repo "${{ github.repository }}" --clobber
+
+      - name: Upload Windows updater bundles
+        if: runner.os == 'Windows'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $dir = "src-tauri\target\${{ matrix.target }}\release\bundle\msi"
+          Get-ChildItem $dir -Filter "*.msi.zip" | ForEach-Object {
+            gh release upload "${{ github.ref_name }}" $_.FullName --repo "${{ github.repository }}" --clobber
+          }
+          Get-ChildItem $dir -Filter "*.msi.zip.sig" | ForEach-Object {
+            gh release upload "${{ github.ref_name }}" $_.FullName --repo "${{ github.repository }}" --clobber
+          }
+
+  generate-updater-json:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate and upload latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          VERSION="${TAG#v}"
+          BASE_URL="https://github.com/${GH_REPO}/releases/download/${TAG}"
+
+          mkdir -p /tmp/sigs
+          gh release download "${TAG}" --repo "${GH_REPO}" --pattern "*.sig" --dir /tmp/sigs
+
+          echo "Downloaded sig files:"
+          ls /tmp/sigs/
+
+          MAC_AARCH64_SIG=$(cat "/tmp/sigs/Logr_aarch64.app.tar.gz.sig")
+          MAC_X64_SIG=$(cat "/tmp/sigs/Logr_x64.app.tar.gz.sig")
+
+          WIN_SIG_FILE=$(ls /tmp/sigs/*.msi.zip.sig | head -1)
+          WIN_SIG=$(cat "$WIN_SIG_FILE")
+          WIN_ZIP_NAME=$(basename "$WIN_SIG_FILE" .sig)
+
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg mac_aarch64_sig "$MAC_AARCH64_SIG" \
+            --arg mac_aarch64_url "${BASE_URL}/Logr_aarch64.app.tar.gz" \
+            --arg mac_x64_sig "$MAC_X64_SIG" \
+            --arg mac_x64_url "${BASE_URL}/Logr_x64.app.tar.gz" \
+            --arg win_sig "$WIN_SIG" \
+            --arg win_url "${BASE_URL}/${WIN_ZIP_NAME}" \
+            '{
+              version: $version,
+              notes: "",
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64": { signature: $mac_aarch64_sig, url: $mac_aarch64_url },
+                "darwin-x86_64":  { signature: $mac_x64_sig,    url: $mac_x64_url },
+                "windows-x86_64": { signature: $win_sig,        url: $win_url }
+              }
+            }' > /tmp/latest.json
+
+          echo "Generated latest.json:"
+          cat /tmp/latest.json
+
+          gh release upload "${TAG}" /tmp/latest.json --repo "${GH_REPO}" --clobber
