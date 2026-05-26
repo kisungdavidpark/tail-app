@@ -85,8 +85,27 @@ jobs:
         if: runner.os == 'macOS'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
-          SIG=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos" -name "*.app.tar.gz.sig" | head -1)
+          echo "=== bundle/macos 디렉토리 내용 ==="
+          ls -la "src-tauri/target/${{ matrix.target }}/release/bundle/macos/" 2>/dev/null || echo "디렉토리 없음"
+
+          # .sig 파일 탐색 (전체 번들 디렉토리)
+          SIG=$(find "src-tauri/target/${{ matrix.target }}/release/bundle" -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
+
+          # sig 파일이 없으면 직접 서명 생성
+          if [ -z "$SIG" ]; then
+            echo ".sig 파일 없음 → 직접 서명"
+            BUNDLE=$(find "src-tauri/target/${{ matrix.target }}/release/bundle/macos" -name "*.app.tar.gz" 2>/dev/null | head -1)
+            echo "번들 파일: $BUNDLE"
+            echo "$TAURI_SIGNING_PRIVATE_KEY" > /tmp/signing_key_b64.txt
+            base64 -d /tmp/signing_key_b64.txt > /tmp/signing.key
+            npx tauri signer sign -k /tmp/signing.key -p "" "$BUNDLE"
+            SIG="${BUNDLE}.sig"
+          fi
+
+          echo "서명 파일: $SIG"
           cp "$SIG" "/tmp/Logr_${{ matrix.arch }}.app.tar.gz.sig"
           gh release upload "${{ github.ref_name }}" "/tmp/Logr_${{ matrix.arch }}.app.tar.gz.sig" \
             --repo "${{ github.repository }}" --clobber
