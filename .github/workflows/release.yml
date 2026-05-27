@@ -119,10 +119,25 @@ jobs:
         run: |
           $dir = "src-tauri\target\${{ matrix.target }}\release\bundle\msi"
           $msi = Get-ChildItem $dir -Filter "*.msi" | Select-Object -First 1
-          if (-not $msi) { throw "Windows MSI bundle not found" }
+          if (-not $msi) {
+            Get-ChildItem $dir | Format-Table Name
+            throw "Windows MSI bundle not found"
+          }
 
           $zip = Join-Path $env:RUNNER_TEMP ($msi.Name + ".zip")
-          Compress-Archive -LiteralPath $msi.FullName -DestinationPath $zip -Force
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::Open($zip, [System.IO.Compression.ZipArchiveMode]::Create)
+          try {
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+              $archive,
+              $msi.FullName,
+              $msi.Name,
+              [System.IO.Compression.CompressionLevel]::NoCompression
+            ) | Out-Null
+          } finally {
+            $archive.Dispose()
+          }
+
           $signingKey = $env:TAURI_SIGNING_PRIVATE_KEY -replace "`r|`n", ""
           npx tauri signer sign --private-key $signingKey $zip
 
